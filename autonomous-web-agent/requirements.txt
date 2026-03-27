@@ -1,0 +1,9 @@
+google-adk
+google-genai
+playwright
+fastapi
+uvicorn
+python-dotenv
+aiohttp
+websockets
+jinja2
