@@ -65,7 +65,7 @@ if __name__ == "__main__":
     # Test script for the agent
     async def test():
         agent = create_web_agent()
-        response = await agent.run("Go to google.com and search for 'latest AI news'.")
-        print(response)
+        async for event in agent.run_async("Go to google.com and search for 'latest AI news'."):
+            print(event)
 
     asyncio.run(test())

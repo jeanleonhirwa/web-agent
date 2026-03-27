@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Web Agent</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --sidebar-bg: #1e293b;
+            --accent-color: #38bdf8;
+            --text-color: #f8fafc;
+            --border-color: #334155;
+            --chat-bubble-user: #0ea5e9;
+            --chat-bubble-agent: #334155;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar - Chat Area */
+        .chat-sidebar {
+            width: 400px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+        }
+
+        .header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1 {
+            font-size: 1.25rem;
+            margin: 0;
+            background: linear-gradient(to right, var(--accent-color), #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        #chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-message {
+            align-self: flex-end;
+            background-color: var(--chat-bubble-user);
+            border-bottom-right-radius: 4px;
+        }
+
+        .agent-message {
+            align-self: flex-start;
+            background-color: var(--chat-bubble-agent);
+            border-bottom-left-radius: 4px;
+        }
+
+        .agent-log {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            font-style: italic;
+            border-left: 2px solid var(--accent-color);
+            padding-left: 8px;
+            margin-top: 4px;
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        #user-input {
+            flex: 1;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: white;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #user-input:focus {
+            border-color: var(--accent-color);
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .icon-btn:hover {
+            color: var(--accent-color);
+            background-color: #334155;
+        }
+
+        .icon-btn.active {
+            color: #ef4444;
+            background-color: rgba(239, 68, 68, 0.1);
+        }
+
+        /* Main Viewport - Browser Eyes */
+        .main-viewport {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-image: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
+        }
+
+        .viewport-header {
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #22c55e;
+            box-shadow: 0 0 8px #22c55e;
+        }
+
+        .browser-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .browser-mockup {
+            width: 100%;
+            max-width: 1000px;
+            aspect-ratio: 16/10;
+            background-color: #334155;
+            border-radius: 12px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            position: relative;
+        }
+
+        #browser-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.9;
+        }
+
+        .browser-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #64748b;
+        }
+
+        /* Audio Visualizer (Fake for UI) */
+        .visualizer {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 20px;
+        }
+
+        .bar {
+            width: 3px;
+            background-color: var(--accent-color);
+            border-radius: 2px;
+            animation: pulse 1s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { height: 4px; }
+            50% { height: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <aside class="chat-sidebar">
+            <header class="header">
+                <div class="dot"></div>
+                <h1>Autonomous Agent</h1>
+            </header>
+            
+            <div id="chat-history">
+                <div class="message agent-message">
+                    Hello! I'm your autonomous web agent. What task can I perform for you today?
+                </div>
+            </div>
+
+            <div class="input-area">
+                <button id="mic-btn" class="icon-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                </button>
+                <input type="text" id="user-input" placeholder="Type a task (e.g., 'Book a flight' or 'Search news')...">
+                <button id="send-btn" class="icon-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-viewport">
+            <div class="viewport-header">
+                <div class="status-badge">
+                    <div class="dot"></div>
+                    <span>Agent Eyes: Active Viewport</span>
+                </div>
+                <div class="visualizer" id="audio-visualizer" style="display: none;">
+                    <div class="bar" style="animation-delay: 0.1s"></div>
+                    <div class="bar" style="animation-delay: 0.2s"></div>
+                    <div class="bar" style="animation-delay: 0.3s"></div>
+                    <div class="bar" style="animation-delay: 0.4s"></div>
+                    <div class="bar" style="animation-delay: 0.5s"></div>
+                </div>
+            </div>
+
+            <div class="browser-container">
+                <div class="browser-mockup">
+                    <img id="browser-preview" src="" alt="">
+                    <div class="browser-placeholder" id="placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 16px;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                        <p>No browser session active</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const chatHistory = document.getElementById('chat-history');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const micBtn = document.getElementById('mic-btn');
+        const browserPreview = document.getElementById('browser-preview');
+        const placeholder = document.getElementById('placeholder');
+        const visualizer = document.getElementById('audio-visualizer');
+
+        const socket = new WebSocket(`ws://${window.location.host}/ws`);
+
+        socket.onmessage = async (event) => {
+            const message = JSON.parse(event.data);
+            
+            if (message.type === 'text') {
+                addMessage(message.content, 'agent');
+            } else if (message.type === 'agent_log') {
+                const logDiv = document.createElement('div');
+                logDiv.className = 'agent-log';
+                logDiv.innerText = "Task log: " + message.content;
+                chatHistory.appendChild(logDiv);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            } else if (message.type === 'screenshot') {
+                placeholder.style.display = 'none';
+                browserPreview.src = message.url + "?t=" + new Date().getTime();
+            } else if (message.type === 'audio') {
+                playAudio(message.content);
+            }
+        };
+
+        function addMessage(text, role) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}-message`;
+            msgDiv.innerText = text;
+            chatHistory.appendChild(msgDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function sendTask() {
+            const task = userInput.value.trim();
+            if (task) {
+                addMessage(task, 'user');
+                socket.send(JSON.stringify({
+                    type: 'user_text',
+                    content: task
+                }));
+                userInput.value = '';
+            }
+        }
+
+        sendBtn.onclick = sendTask;
+        userInput.onkeypress = (e) => { if (e.key === 'Enter') sendTask(); };
+
+        // --- Audio Handling (Web Audio API) ---
+        let audioContext;
+        let audioQueue = [];
+        let isPlaying = false;
+
+        async function playAudio(base64Data) {
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            
+            visualizer.style.display = 'flex';
+            const binaryString = atob(base64Data);
+            const len = binaryString.length;
+            const bytes = new Int16Array(len / 2);
+            for (let i = 0; i < len; i += 2) {
+                bytes[i / 2] = (binaryString.charCodeAt(i + 1) << 8) | binaryString.charCodeAt(i);
+            }
+            
+            const floatData = new Float32Array(bytes.length);
+            for (let i = 0; i < bytes.length; i++) {
+                floatData[i] = bytes[i] / 32768.0;
+            }
+
+            const buffer = audioContext.createBuffer(1, floatData.length, 24000);
+            buffer.getChannelData(0).set(floatData);
+            
+            audioQueue.push(buffer);
+            if (!isPlaying) playNext();
+        }
+
+        function playNext() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                visualizer.style.display = 'none';
+                return;
+            }
+            isPlaying = true;
+            const buffer = audioQueue.shift();
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.onended = playNext;
+            source.start();
+        }
+
+        // Recording
+        let mediaRecorder;
+        let isRecording = false;
+
+        micBtn.onclick = async () => {
+            if (!isRecording) {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // Note: Simplified. For real PCM 16kHz, you need an AudioWorklet or ScriptProcessor
+                console.log("Recording started (prototype)...");
+                micBtn.classList.add('active');
+                isRecording = true;
+            } else {
+                console.log("Recording stopped.");
+                micBtn.classList.remove('active');
+                isRecording = false;
+            }
+        };
+    </script>
+</body>
+</html>
