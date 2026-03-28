@@ -11,18 +11,17 @@ An autonomous web agent capable of performing complex multi-step tasks in a brow
 
 ## Tech Stack
 - **Agent Framework:** Google Agent Development Kit (ADK) for Python.
-- **LLM Brain:** Google Gemini 2.0 Flash / 2.5 Flash (via `google-genai`).
+- **LLM Brain:** Google Gemini 3 Flash (`gemini-3-flash-preview`).
+- **Live Model:** Google Gemini 3.1 Flash Live (`gemini-3.1-flash-live-preview`).
 - **Browser Automation:** Playwright (Python).
 - **Backend:** FastAPI (Python) for bridging the frontend to the Gemini Live API and ADK agent.
 - **Frontend:** Vanilla HTML, CSS (clean aesthetic), and JavaScript.
 
-## Project Structure (Planned)
-- `agent/`: ADK agent definition and tools.
-- `browser/`: Playwright-based browser interaction module.
-- `server/`: FastAPI server for the web interface and Live API.
-- `web/`: Frontend assets (HTML, CSS, JS).
-- `requirements.txt`: Python dependencies.
-- `.env`: Environment variables (API keys).
+## Architecture
+- **Agent Orchestration:** Uses the `google.adk.Runner` for managing agent interactions.
+- **Session Management:** Employs `google.adk.sessions.InMemorySessionService` to maintain context across a user session.
+- **Async Workflow:** Fully asynchronous communication between the Frontend, FastAPI, Gemini Live API, and the ADK Agent.
+- **Event Handling:** The agent streams `Event` objects which are processed to extract `Content` parts (text and reasoning).
 
 ## Next Steps
 1. Initialize the Python environment and install dependencies.

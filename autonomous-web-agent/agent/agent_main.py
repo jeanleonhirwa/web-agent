@@ -1,5 +1,7 @@
 import asyncio
 from google.adk.agents import Agent
+from google.adk.planners import BuiltInPlanner
+from google.genai import types
 from browser.manager import BrowserManager
 import os
 from dotenv import load_dotenv
@@ -37,12 +39,24 @@ async def take_screenshot() -> str:
     manager = await BrowserManager.get_instance()
     return await manager.screenshot()
 
+# Ensure models have the "models/" prefix
+def format_model_id(model_id: str) -> str:
+    if not model_id.startswith("models/"):
+        return f"models/{model_id}"
+    return model_id
+
 # Define the ADK Agent
 def create_web_agent():
+    model_id = os.getenv("LLM_MODEL_ID", "gemini-3-flash-preview")
     return Agent(
-        model='gemini-2.0-flash-exp', # or gemini-1.5-flash
+        model=model_id,
         name='web_agent',
         description="An autonomous web browsing assistant.",
+        planner=BuiltInPlanner(
+            thinking_config=types.ThinkingConfig(
+                thinking_level="MEDIUM"
+            )
+        ),
         instruction=(
             "You are a highly capable autonomous web agent. Your goal is to browse the web, "
             "interact with websites, and perform tasks as requested by the user. "
@@ -62,10 +76,17 @@ def create_web_agent():
     )
 
 if __name__ == "__main__":
+    from google.adk import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
     # Test script for the agent
     async def test():
         agent = create_web_agent()
-        async for event in agent.run_async("Go to google.com and search for 'latest AI news'."):
+        session_service = InMemorySessionService()
+        await session_service.create_session(app_name="web_agent_app", user_id="test_user", session_id="test_session")
+        runner = Runner(agent=agent, app_name="web_agent_app", session_service=session_service)
+        message = types.Content(role="user", parts=[types.Part(text="Go to google.com")])
+        async for event in runner.run_async(user_id="test_user", session_id="test_session", new_message=message):
             print(event)
 
     asyncio.run(test())
