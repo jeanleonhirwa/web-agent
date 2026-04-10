@@ -10,34 +10,52 @@ load_dotenv()
 
 # Wrapper tools for the browser manager
 async def navigate_to_url(url: str) -> str:
-    """Navigates the browser to the specified URL."""
-    manager = await BrowserManager.get_instance()
-    return await manager.navigate(url)
+    """Navigates the browser to the specified URL. Use this to open websites."""
+    try:
+        manager = await BrowserManager.get_instance()
+        return await manager.navigate(url)
+    except Exception as e:
+        return f"Failed to navigate to {url}: {e}"
 
 async def click_element(selector: str) -> str:
     """Clicks an element identified by the CSS selector."""
-    manager = await BrowserManager.get_instance()
-    return await manager.click(selector)
+    try:
+        manager = await BrowserManager.get_instance()
+        return await manager.click(selector)
+    except Exception as e:
+        return f"Failed to click {selector}: {e}"
 
 async def type_into_element(selector: str, text: str) -> str:
     """Types text into an element identified by the CSS selector."""
-    manager = await BrowserManager.get_instance()
-    return await manager.type_text(selector, text)
+    try:
+        manager = await BrowserManager.get_instance()
+        return await manager.type_text(selector, text)
+    except Exception as e:
+        return f"Failed to type into {selector}: {e}"
 
 async def read_page_content() -> str:
     """Returns the visible text content of the current page."""
-    manager = await BrowserManager.get_instance()
-    return await manager.get_page_content()
+    try:
+        manager = await BrowserManager.get_instance()
+        return await manager.get_page_content()
+    except Exception as e:
+        return f"Failed to read page content: {e}"
 
 async def get_current_url() -> str:
     """Returns the current URL of the page."""
-    manager = await BrowserManager.get_instance()
-    return await manager.get_current_url()
+    try:
+        manager = await BrowserManager.get_instance()
+        return await manager.get_current_url()
+    except Exception as e:
+        return f"Failed to get URL: {e}"
 
 async def take_screenshot() -> str:
     """Takes a screenshot of the current page for visual confirmation."""
-    manager = await BrowserManager.get_instance()
-    return await manager.screenshot()
+    try:
+        manager = await BrowserManager.get_instance()
+        return await manager.screenshot()
+    except Exception as e:
+        return f"Failed to take screenshot: {e}"
 
 # Ensure models have the "models/" prefix
 def format_model_id(model_id: str) -> str:
@@ -63,7 +81,9 @@ def create_web_agent():
             "Use the provided browser tools to navigate, click, and read information. "
             "Always think step-by-step. If a task is complex, break it down into smaller actions. "
             "If you need to find an element, use CSS selectors. If you are stuck, "
-            "use 'read_page_content' to understand the current page state."
+            "use 'read_page_content' to understand the current page state. "
+            "Always start by navigating to the relevant URL using 'navigate_to_url'. "
+            "After completing important actions, use 'take_screenshot' for visual confirmation."
         ),
         tools=[
             navigate_to_url,

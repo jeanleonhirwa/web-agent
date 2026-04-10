@@ -18,11 +18,14 @@ load_dotenv()
 
 app = FastAPI()
 
+# Ensure static directory exists
+os.makedirs("web/static", exist_ok=True)
+
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
 templates = Jinja2Templates(directory="web/templates")
 
-# Initialize Gemini Client with explicit v1beta
+# Initialize Gemini Client
 client = genai.Client(
     api_key=os.getenv("GOOGLE_API_KEY"),
     http_options=types.HttpOptions(api_version='v1beta')
@@ -35,40 +38,117 @@ web_agent = create_web_agent()
 session_service = InMemorySessionService()
 agent_runner = Runner(agent=web_agent, app_name="web_agent_app", session_service=session_service)
 
+
 @app.get("/")
 async def get_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+async def run_agent_task(user_input: str, user_id: str, session_id: str, websocket: WebSocket):
+    """Run the ADK agent and return its response with retry logic."""
+    agent_response = ""
+    message = types.Content(role="user", parts=[types.Part(text=user_input)])
+    max_retries = 3
+
+    # Send a "thinking" indicator
+    await websocket.send_text(json.dumps({
+        "type": "status",
+        "content": "thinking"
+    }))
+
+    for attempt in range(max_retries):
+        try:
+            agent_response = ""
+            async for event in agent_runner.run_async(
+                user_id=user_id,
+                session_id=session_id,
+                new_message=message
+            ):
+                # Extract content from events
+                if hasattr(event, "content") and event.content:
+                    if hasattr(event.content, "parts") and event.content.parts:
+                        for part in event.content.parts:
+                            if hasattr(part, "text") and part.text:
+                                agent_response += part.text
+                    elif isinstance(event.content, str):
+                        agent_response += event.content
+            # Success - break out of retry loop
+            break
+        except Exception as e:
+            error_str = str(e)
+            is_retryable = "429" in error_str or "503" in error_str or "UNAVAILABLE" in error_str or "RESOURCE_EXHAUSTED" in error_str
+            if is_retryable and attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)  # 2, 4, 8 seconds
+                print(f"API error (attempt {attempt+1}/{max_retries}), retrying in {wait_time}s: {e}")
+                await websocket.send_text(json.dumps({
+                    "type": "agent_log",
+                    "content": f"⏳ API busy, retrying in {wait_time}s... (attempt {attempt+1}/{max_retries})"
+                }))
+                await asyncio.sleep(wait_time)
+            else:
+                agent_response = f"Agent error: {e}"
+                print(f"Agent execution error: {e}")
+                traceback.print_exc()
+                break
+
+    # Send agent log to frontend
+    if agent_response:
+        await websocket.send_text(json.dumps({
+            "type": "agent_log",
+            "content": agent_response
+        }))
+
+    # Take a screenshot and send it
+    try:
+        manager = await BrowserManager.get_instance()
+        await manager.screenshot("browser_preview.png")
+        await websocket.send_text(json.dumps({
+            "type": "screenshot",
+            "url": "/static/browser_preview.png"
+        }))
+    except Exception as e:
+        print(f"Screenshot error: {e}")
+
+    # Send done indicator
+    await websocket.send_text(json.dumps({
+        "type": "status",
+        "content": "done"
+    }))
+
+    return agent_response
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket connected.")
-    
+
     # Create a unique session for this WebSocket connection
     user_id = "web_user"
     session_id = f"session_{id(websocket)}"
-    await session_service.create_session(app_name="web_agent_app", user_id=user_id, session_id=session_id)
-    
+    await session_service.create_session(
+        app_name="web_agent_app", user_id=user_id, session_id=session_id
+    )
+
+    # Try to connect Gemini Live in background (optional enhancement)
+    live_session = None
+    gemini_listener = None
+
     try:
-        # Establish connection with Gemini Live API
-        config = {
-            "response_modalities": ["AUDIO", "TEXT"],
-            "generation_config": {
-                "thinking_config": {
-                    "thinking_level": "MINIMAL"
-                }
-            }
-        }
-        
-        print(f"Connecting to Gemini Live: {LIVE_MODEL_ID}...")
-        
-        async with client.aio.live.connect(model=LIVE_MODEL_ID, config=config) as session:
-            print(f"Connected to Gemini Live session.")
-            
-            # Start a background task to listen for Gemini Live responses
+        # Attempt to connect Gemini Live API (non-blocking)
+        try:
+            config = types.LiveConnectConfig(
+                response_modalities=["TEXT"],
+            )
+            print(f"Attempting Gemini Live connection: {LIVE_MODEL_ID}...")
+            live_connection = client.aio.live.connect(model=LIVE_MODEL_ID, config=config)
+            live_session = await live_connection.__aenter__()
+            print("Gemini Live connected successfully!")
+
+            # Start background listener for Gemini Live responses
             async def listen_from_gemini():
                 try:
-                    async for message in session.receive():
+                    async for message in live_session.receive():
                         if message.server_content is not None:
                             model_turn = message.server_content.model_turn
                             if model_turn and model_turn.parts:
@@ -78,80 +158,101 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "type": "text",
                                             "content": part.text
                                         }))
-                                    if part.inline_data:
-                                        audio_base64 = base64.b64encode(part.inline_data.data).decode('utf-8')
-                                        await websocket.send_text(json.dumps({
-                                            "type": "audio",
-                                            "content": audio_base64
-                                        }))
-                except Exception as inner_e:
-                    print(f"Gemini Listener Error: {inner_e}")
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    print(f"Gemini listener error: {e}")
 
             gemini_listener = asyncio.create_task(listen_from_gemini())
 
-            # Listen for messages from our frontend
-            while True:
-                data = await websocket.receive_text()
-                msg = json.loads(data)
-                
-                if msg["type"] == "user_text":
-                    user_input = msg["content"]
-                    
-                    # 1. Run the autonomous agent via Runner
-                    agent_response = ""
-                    # Runner requires a Content object
-                    message = types.Content(role="user", parts=[types.Part(text=user_input)])
-                    
-                    async for event in agent_runner.run_async(
-                        user_id=user_id, 
-                        session_id=session_id, 
-                        new_message=message
-                    ):
-                        # Extract content from events
-                        if hasattr(event, "content") and event.content:
-                            if hasattr(event.content, "parts") and event.content.parts:
-                                for part in event.content.parts:
-                                    if hasattr(part, "text") and part.text:
-                                        agent_response += part.text
-                            elif isinstance(event.content, str):
-                                agent_response += event.content
-                    
-                    # 2. Inform the Live API about the agent's work
-                    await session.send(input=f"The web agent performed the following actions: {agent_response}. Respond to the user about it.", end_of_turn=True)
-                    
-                    # 3. Update the frontend with the agent's summary
-                    await websocket.send_text(json.dumps({
-                        "type": "agent_log",
-                        "content": agent_response
-                    }))
-                    
-                    # 4. Take a screenshot
-                    manager = await BrowserManager.get_instance()
-                    await manager.screenshot("browser_preview.png")
-                    await websocket.send_text(json.dumps({
-                        "type": "screenshot",
-                        "url": "/static/browser_preview.png"
-                    }))
+        except Exception as e:
+            print(f"Gemini Live unavailable (will use text-only mode): {e}")
+            live_session = None
 
-                elif msg["type"] == "user_audio":
-                    audio_data = base64.b64decode(msg["content"])
-                    await session.send(input={
-                        "mime_type": "audio/pcm;rate=16000",
-                        "data": audio_data
-                    })
+        # Notify frontend about mode
+        mode = "live" if live_session else "text-only"
+        if mode == "text-only":
+            await websocket.send_text(json.dumps({
+                "type": "text",
+                "content": "⚡ Connected! I'll browse the web and complete your tasks."
+            }))
+        else:
+            await websocket.send_text(json.dumps({
+                "type": "text",
+                "content": "🎙️ Connected with voice support! I'll browse the web and complete your tasks."
+            }))
+
+        # Main message loop
+        while True:
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+
+            if msg["type"] == "user_text":
+                user_input = msg["content"]
+
+                # Run the agent task
+                agent_response = await run_agent_task(
+                    user_input, user_id, session_id, websocket
+                )
+
+                if live_session:
+                    # Feed agent result to Gemini Live for conversational response
+                    try:
+                        await live_session.send(
+                            input=f"The web agent performed: {agent_response}. Summarize for the user.",
+                            end_of_turn=True
+                        )
+                    except Exception as e:
+                        print(f"Live send error: {e}")
+                        # Fallback: send as plain text
+                        await websocket.send_text(json.dumps({
+                            "type": "text",
+                            "content": agent_response
+                        }))
+                else:
+                    # Text-only mode: send agent response directly
+                    if agent_response:
+                        await websocket.send_text(json.dumps({
+                            "type": "text",
+                            "content": agent_response
+                        }))
+
+            elif msg["type"] == "user_audio":
+                if live_session:
+                    try:
+                        audio_data = base64.b64decode(msg["content"])
+                        await live_session.send(input={
+                            "mime_type": "audio/pcm;rate=16000",
+                            "data": audio_data
+                        })
+                    except Exception as e:
+                        print(f"Audio send error: {e}")
 
     except WebSocketDisconnect:
         print("WebSocket disconnected.")
     except Exception as e:
-        print(f"Error in WebSocket: {e}")
+        print(f"WebSocket error: {e}")
         traceback.print_exc()
     finally:
-        pass
+        # Cleanup
+        if gemini_listener:
+            gemini_listener.cancel()
+        if live_session:
+            try:
+                await live_connection.__aexit__(None, None, None)
+            except Exception:
+                pass
+        print("WebSocket session ended.")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    manager = await BrowserManager.get_instance()
-    await manager.close()
+    try:
+        manager = await BrowserManager.get_instance()
+        await manager.close()
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     import uvicorn
