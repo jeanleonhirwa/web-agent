@@ -23,6 +23,9 @@ An autonomous web agent capable of performing complex multi-step tasks in a brow
 - **Async Workflow:** Fully asynchronous communication between the Frontend, FastAPI, Gemini Live API, and the ADK Agent.
 - **Event Handling:** The agent streams `Event` objects which are processed to extract `Content` parts (text and reasoning).
 
+## User's Initial prompt to  build this app
+Build me an Autonomous web agent that can do anything that a human can do in browser or on web. Make it able to do small things like a single action or task/tasks/activities that can take like 10 minutes or several actions, Make it fully autonomous. User can interact it with text or voice using gemini live model api. Build it in python with google's adk(agent development kit) but with a clean personalized website for interacting with it. and also create an md file and save all information about this project, so next time you or any ai coding agent will have context of the project to continue building effectively. Start building 💪
+
 ## Next Steps
 1. Initialize the Python environment and install dependencies.
 2. Implement the Playwright-based browser tool for the ADK agent.
